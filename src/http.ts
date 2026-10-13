@@ -46,12 +46,14 @@ const GATEWAY_CREDENTIALS_UNAUTHORIZED = {
   error: 'Unauthorized: missing required gateway credential header X-AlertOps-Api-Key',
 };
 
+/** Returns a trimmed header string, or undefined when the header is missing or blank. */
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** True for 127.0.0.1, localhost, and ::1, including a bracketed IPv6 form. */
 function isLoopbackHost(host: string): boolean {
   const normalized = host.trim().toLowerCase().replace(/^\[(.+)\]$/, '$1');
   return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
@@ -98,6 +100,13 @@ function resolveListenHost(s2sSecret: string): string {
   return LOOPBACK_HOST;
 }
 
+/**
+ * Starts the HTTP MCP listener.
+ *
+ * Resolves with the listening server. Rejects when the listener emits an
+ * error. Exits the process when `CONDUIT_S2S_SECRET` is empty (unless
+ * `MCP_ALLOW_INSECURE_DEV=1`) or is a known placeholder.
+ */
 export async function startHttpTransport(): Promise<HttpServer> {
   const s2sSecret = resolveS2sSecret();
   const port = parseInt(process.env.MCP_HTTP_PORT || '8080', 10);

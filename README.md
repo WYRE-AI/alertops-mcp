@@ -102,29 +102,30 @@ npm run lint   # tsc --noEmit
 
 ## Docker
 
-The image listens on `0.0.0.0` inside the container (`MCP_HTTP_HOST`) and defaults to `AUTH_MODE=gateway`. Publish the port on loopback and pass the S2S secret. In gateway mode the AlertOps API key arrives on each request as `X-AlertOps-Api-Key`.
+The image listens on `0.0.0.0` inside the container (`MCP_HTTP_HOST`) and defaults to `AUTH_MODE=gateway`. Publish the port on loopback and pass a generated S2S secret. Startup rejects an empty `CONDUIT_S2S_SECRET` and known placeholders (`your-s2s-secret`, `changeme`, and similar), so each command below creates a value with `openssl rand -hex 32` instead of embedding one. In gateway mode the AlertOps API key arrives on each request as `X-AlertOps-Api-Key`.
 
 ```bash
 docker build -t alertops-mcp .
 docker run \
-  -e CONDUIT_S2S_SECRET=your-s2s-secret \
+  -e CONDUIT_S2S_SECRET="$(openssl rand -hex 32)" \
   -p 127.0.0.1:8080:8080 \
   alertops-mcp
 ```
 
-Compose refuses to start when `CONDUIT_S2S_SECRET` is unset. The Compose service is gateway mode, sets no `ALERTOPS_API_KEY`, and publishes `127.0.0.1:8080:8080`:
+Compose refuses to start when `CONDUIT_S2S_SECRET` is unset. The Compose service is gateway mode, sets no `ALERTOPS_API_KEY`, and publishes `127.0.0.1:8080:8080`. Export one secret when a gateway must sign requests with the same value the container receives:
 
 ```bash
-CONDUIT_S2S_SECRET=your-s2s-secret docker compose up
+export CONDUIT_S2S_SECRET="$(openssl rand -hex 32)"
+docker compose up
 ```
 
-Single-tenant HTTP (`AUTH_MODE=env`) still requires the S2S secret, then uses `ALERTOPS_API_KEY`:
+Single-tenant HTTP (`AUTH_MODE=env`) still requires the S2S secret, then uses `ALERTOPS_API_KEY` from the environment. Export that key before running the command.
 
 ```bash
 docker run \
-  -e CONDUIT_S2S_SECRET=your-s2s-secret \
+  -e CONDUIT_S2S_SECRET="$(openssl rand -hex 32)" \
   -e AUTH_MODE=env \
-  -e ALERTOPS_API_KEY=your-api-key \
+  -e ALERTOPS_API_KEY \
   -p 127.0.0.1:8080:8080 \
   alertops-mcp
 ```

@@ -47,12 +47,14 @@ const ENV_KEYS = [
 const savedEnv = new Map<string, string | undefined>();
 const servers: Server[] = [];
 
+/** Builds a valid X-Gateway-S2S header for the given secret and timestamp. */
 function mintS2sHeader(secret: string, unixSeconds = Math.floor(Date.now() / 1000)): string {
   const message = `t=${unixSeconds}`;
   const hex = createHmac('sha256', secret).update(message).digest('hex');
   return `${message},v1=${hex}`;
 }
 
+/** Captures console.error text written while a startup check runs. */
 function captureStderr(): { text: () => string; restore: () => void } {
   const lines: string[] = [];
   const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
@@ -69,6 +71,7 @@ interface HttpResult {
   body: string;
 }
 
+/** Sends one HTTP request to the loopback test server and returns status plus body. */
 function sendHttp(options: {
   port: number;
   method: string;
@@ -105,6 +108,7 @@ function sendHttp(options: {
   });
 }
 
+/** Starts the HTTP transport and returns the bound address, port, and a close function. */
 async function listen(): Promise<{ port: number; address: string; close: () => Promise<void> }> {
   const server = await startHttpTransport();
   servers.push(server);
@@ -121,6 +125,7 @@ async function listen(): Promise<{ port: number; address: string; close: () => P
   };
 }
 
+/** Returns the headers an MCP JSON request needs, plus any extras. */
 function mcpHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     'content-type': 'application/json',
@@ -136,6 +141,7 @@ const groupsCall = JSON.stringify({
   params: { name: 'alertops_list_groups', arguments: {} },
 });
 
+/** Asserts startup exits with code 1 and that logs match `assertion` without secrets. */
 async function expectStartupRefused(assertion: (logged: string) => void): Promise<void> {
   const logs = captureStderr();
   const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {

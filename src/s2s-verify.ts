@@ -26,6 +26,10 @@ export const S2S_HEADER = 'x-gateway-s2s';
 
 const HEADER_VALUE_RE = /^t=(\d{1,15}),v1=([0-9a-f]{64})$/;
 
+/**
+ * Returns true when `headerValue` is a fresh `t=<unix>,v1=<hmac-sha256>` proof for `secret`.
+ * An empty secret or header returns false. The secret is not logged.
+ */
 export function verifyS2sHeader(
   headerValue: string | undefined,
   secret: string,

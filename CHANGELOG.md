@@ -6,6 +6,10 @@ Per-version release notes for tagged releases are published on the [GitHub Relea
 
 ## [Unreleased]
 
+### Security
+
+- HTTP startup refuses an empty or known-placeholder `CONDUIT_S2S_SECRET`. `/mcp` requires `X-Gateway-S2S`, and gateway mode requires `X-AlertOps-Api-Key` on each request. `MCP_ALLOW_INSECURE_DEV=1` is the only empty-secret bypass and binds `127.0.0.1` only.
+
 ### Added
 
 - Initial v1 release: 11 read-only tools covering alerts (list, and AlertID lookup by inbound message ID/unique inbound ID), users (list, and contact methods), groups, message topics, configured inbound integrations, and on-call schedules (who's on-call now, and per-user/per-group schedule for a date range). Static account-level API key authentication, sent as the `APIKey` query parameter (AlertOps' documented auth shape, verified live against `api.alertops.com`). See README's Scope section for the full list of deliberately excluded alert-mutating, paging, and provisioning endpoints.
