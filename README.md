@@ -4,7 +4,7 @@ MCP server for [AlertOps](https://alertops.com/)'s incident alerting/on-call API
 
 ## Authentication
 
-AlertOps' REST API (`https://api.alertops.com/api/...`, per its published OpenAPI spec at `api.alertops.com/swagger/v1/swagger.json`) authenticates with a static account-level **API key**, generated under **Account Settings -> Configurations -> Integrations -> API**. Unlike most WYRE Conduit sidecars, the key is not sent as a bearer token or custom auth header - AlertOps requires it as an **`APIKey` query-string parameter on every single request**, GET and POST alike (live-verified 2026-09-20: an invalid key returns a clean `{"reason":"Invalid API Key"}` HTTP 401 on every endpoint this connector calls). This connector receives the key per-request via a custom header (never OAuth, same shape as every other static-key WYRE Conduit sidecar) and itself appends `?APIKey=<key>` when calling AlertOps' API. In gateway mode the key arrives per-request via the `X-AlertOps-Api-Key` header; in local/stdio mode it's read once from `ALERTOPS_API_KEY`.
+AlertOps' REST API (`https://api.alertops.com/api/...`, per its published OpenAPI spec at `api.alertops.com/swagger/v1/swagger.json`) authenticates with a static account-level **API key**, generated under **Account Settings -> Configurations -> Integrations -> API**. Unlike most WYRE Conduit sidecars, the key is not sent as a bearer token or custom auth header - AlertOps requires it as an **`APIKey` query-string parameter on every single request**, GET and POST alike (live-verified 2026-09-20: an invalid key returns a clean `{"reason":"Invalid API Key"}` HTTP 401 on every endpoint this connector calls). This connector receives the key per-request via a custom header (never OAuth, same shape as every other static-key WYRE Conduit sidecar) and itself appends `?APIKey=<key>` when calling AlertOps' API. In gateway mode the key arrives per-request via the `X-AlertOps-Api-Key` header; in local/stdio mode it's read once from `ALERTOPS_API_KEY`. HTTP `/mcp` also requires an `X-Gateway-S2S` signature (see HTTP authentication below). The HTTP server refuses to start without a real `CONDUIT_S2S_SECRET`.
 
 Two separate claims here, at deliberately different confidence levels - don't collapse them into one "read-only" statement:
 
@@ -13,13 +13,32 @@ Two separate claims here, at deliberately different confidence levels - don't co
 
 ## Configuration
 
+Copy [`.env.example`](.env.example). Leave `CONDUIT_S2S_SECRET` empty in that file.
+
 | Env var | Description |
 |---|---|
-| `ALERTOPS_API_KEY` | API key issued under Account Settings -> Configurations -> Integrations -> API. |
+| `ALERTOPS_API_KEY` | API key issued under Account Settings -> Configurations -> Integrations -> API. Used by stdio and by HTTP when `AUTH_MODE=env`. |
 | `MCP_TRANSPORT` | `stdio` (default) or `http`. |
-| `AUTH_MODE` | `env` (default, reads the var above) or `gateway` (credential arrives per-request via the `X-AlertOps-Api-Key` header, injected by the Conduit gateway). |
-| `CONDUIT_S2S_SECRET` | When set, the HTTP transport requires a valid `X-Gateway-S2S` header (Conduit sidecar auth) on every `/mcp` request. |
+| `AUTH_MODE` | `env` (local default; reads `ALERTOPS_API_KEY`) or `gateway` (Docker image and Compose default). Gateway mode requires `X-AlertOps-Api-Key` on each `/mcp` request. |
+| `CONDUIT_S2S_SECRET` | Required to start the HTTP transport. Empty values and known placeholders (`changeme`, `replace-with-a-real-secret`, `your-s2s-secret`, and similar) are rejected: the process logs an error and exits non-zero. The value is never logged. Compose will not start when this is unset. |
+| `MCP_ALLOW_INSECURE_DEV` | Set to exactly `1` for local development only, to start HTTP when `CONDUIT_S2S_SECRET` is empty. Logs a warning, skips the `X-Gateway-S2S` check, and listens on `127.0.0.1` only. A non-loopback `MCP_HTTP_HOST` is ignored in that mode. A known placeholder secret is still rejected. |
+| `MCP_HTTP_HOST` | Bind address for HTTP. Defaults to `127.0.0.1` when unset. A configured `CONDUIT_S2S_SECRET` honors this value (the container image sets `0.0.0.0`). |
+| `MCP_HTTP_PORT` | HTTP port. Defaults to `8080`. |
 | `LOG_LEVEL` | `debug` \| `info` (default) \| `warn` \| `error`. |
+
+`/health` stays unauthenticated and does not read credentials. The stdio transport does not use `CONDUIT_S2S_SECRET`.
+
+### HTTP authentication
+
+With `MCP_TRANSPORT=http` and `CONDUIT_S2S_SECRET` set, every `/mcp` request must include `X-Gateway-S2S`. The value is:
+
+```text
+t=<unix seconds>,v1=<hex hmac-sha256>
+```
+
+`v1` is HMAC-SHA256 over the ASCII message `t=<unix seconds>` (the same `t=` prefix that appears in the header), keyed by `CONDUIT_S2S_SECRET`, encoded as 64 lowercase hex characters. A missing or invalid header returns 401. The secret is never logged.
+
+In `AUTH_MODE=gateway`, `/mcp` also requires `X-AlertOps-Api-Key`. A request missing that header returns 401. Gateway mode uses that header as the only AlertOps credential for the request.
 
 ## Tools
 
@@ -83,9 +102,37 @@ npm run lint   # tsc --noEmit
 
 ## Docker
 
+The image listens on `0.0.0.0` inside the container (`MCP_HTTP_HOST`) and defaults to `AUTH_MODE=gateway`. Publish the port on loopback and pass the S2S secret. In gateway mode the AlertOps API key arrives on each request as `X-AlertOps-Api-Key`.
+
 ```bash
 docker build -t alertops-mcp .
-docker run -p 8080:8080 -e ALERTOPS_API_KEY=... alertops-mcp
+docker run \
+  -e CONDUIT_S2S_SECRET=your-s2s-secret \
+  -p 127.0.0.1:8080:8080 \
+  alertops-mcp
+```
+
+Compose refuses to start when `CONDUIT_S2S_SECRET` is unset. The Compose service is gateway mode, sets no `ALERTOPS_API_KEY`, and publishes `127.0.0.1:8080:8080`:
+
+```bash
+CONDUIT_S2S_SECRET=your-s2s-secret docker compose up
+```
+
+Single-tenant HTTP (`AUTH_MODE=env`) still requires the S2S secret, then uses `ALERTOPS_API_KEY`:
+
+```bash
+docker run \
+  -e CONDUIT_S2S_SECRET=your-s2s-secret \
+  -e AUTH_MODE=env \
+  -e ALERTOPS_API_KEY=your-api-key \
+  -p 127.0.0.1:8080:8080 \
+  alertops-mcp
+```
+
+Local HTTP without a secret is development-only. It binds `127.0.0.1` even if `MCP_HTTP_HOST` is `0.0.0.0`, and logs a warning:
+
+```bash
+MCP_TRANSPORT=http MCP_ALLOW_INSECURE_DEV=1 npm run start:http
 ```
 
 ## License

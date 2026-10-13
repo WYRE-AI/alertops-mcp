@@ -45,7 +45,11 @@ ENV NODE_ENV=production
 ENV LOG_LEVEL=info
 ENV MCP_TRANSPORT=http
 ENV MCP_HTTP_PORT=8080
+# All interfaces inside the container. Startup still fails closed unless
+# CONDUIT_S2S_SECRET is a real secret. MCP_ALLOW_INSECURE_DEV=1 ignores this
+# host and binds 127.0.0.1 only.
 ENV MCP_HTTP_HOST=0.0.0.0
+# Gateway mode reads the AlertOps API key from X-AlertOps-Api-Key only.
 ENV AUTH_MODE=gateway
 
 CMD ["node", "dist/http.js"]
